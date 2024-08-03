@@ -3,7 +3,6 @@ const router = express.Router();
 const chatController = require('../controllers/chatController');
 const authenticateToken = require('../middleware/authMiddleware');
 
-router.get('/', authenticateToken, chatController.getChats);
-router.post('/create', authenticateToken, chatController.createChat);
+router.get('/user', authenticateToken, chatController.getChatsByUser);
 
 module.exports = router;

@@ -1,33 +1,55 @@
+// backend/controllers/messageController.js
 const pool = require('../models/db');
 
-exports.addMessage = (req, res) => {
+exports.addMessage = async (req, res) => {
     const { fromUserID, toUserID, carID, message, date } = req.body;
-    const newMessage = { fromUserID, toUserID, carID, message, date };
 
-    console.log('Inserting message:', newMessage); // Debugging line
+    try {
+        // Check if a chat exists between these users for this car
+        let chat = await pool.query(
+            'SELECT * FROM tbl_115_chats WHERE carID = ? OR ((userID1 = ? AND userID2 = ?) OR (userID1 = ? AND userID2 = ?))',
+            [carID, fromUserID, toUserID, toUserID, fromUserID]
+        );
 
-    pool.query('INSERT INTO tbl_115_new_messages SET ?', newMessage, (err, result) => {
-        if (err) throw err;
-        res.json({ messageID: result.insertId, ...newMessage });
-    });
+        let chatID;
+
+        if (chat.length === 0) {
+            // Create a new chat
+            let result = await pool.query(
+                'INSERT INTO tbl_115_chats (carID, userID1, userID2) VALUES (?, ?, ?)',
+                [carID, fromUserID, toUserID]
+            );
+            chatID = result.insertId;
+        } else {
+            chatID = chat[0].chatID;
+        }
+
+        // Insert the message
+        const newMessage = { fromUserID, toUserID, carID, chatID, message, date };
+        await pool.query('INSERT INTO tbl_115_messages SET ?', newMessage);
+
+        // Update the chat's last message
+        await pool.query(
+            'UPDATE tbl_115_chats SET lastMessage = ?, lastMessageTime = ? WHERE chatID = ?',
+            [message, date, chatID]
+        );
+
+        res.json({ ...newMessage, chatID });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ message: 'Error adding message' });
+    }
 };
 
 exports.getMessages = (req, res) => {
     const { carID } = req.query;
     const userID = req.user.id;
 
-    console.log('Fetching messages for userID:', userID, 'and carID:', carID); // Debugging line
-
     pool.query(
-        'SELECT * FROM tbl_115_new_messages WHERE carID = ? AND (fromUserID = ? OR toUserID = ?)',
+        'SELECT * FROM tbl_115_messages WHERE carID = ?  OR (fromUserID = ? OR toUserID = ?)',
         [carID, userID, userID],
         (err, results) => {
-            if (err) {
-                console.error('Error fetching messages:', err);
-                res.status(500).json({ error: 'Database query error' });
-                return;
-            }
-            console.log('Fetched messages:', results); // Debugging line
+            if (err) throw err;
             res.json(results);
         }
     );
